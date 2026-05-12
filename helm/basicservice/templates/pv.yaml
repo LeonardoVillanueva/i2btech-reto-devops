@@ -1,3 +1,13 @@
+# PersistentVolume para logs de la aplicacion (punto 3e del reto)
+#
+# Flujo de persistencia de logs:
+#   1. La app (index.js) escribe logs en path.join(__dirname, 'logs') -> /app/src/logs/app.log
+#   2. El Deployment monta el PVC en /app/src/logs (volumeMount en el contenedor)
+#   3. El PVC se bindea a este PV
+#   4. Este PV mapea al hostPath en el nodo Minikube (/mnt/logs/basicservice)
+#
+# Resultado: /app/src/logs/app.log (contenedor) = /mnt/logs/basicservice/app.log (nodo)
+# Validar con: minikube ssh -- cat /mnt/logs/basicservice/app.log
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -10,10 +20,8 @@ spec:
     storage: {{ .Values.persistence.storageSize }}
   accessModes:
     - ReadWriteOnce
-  # storageClassName vacío para binding manual con el PVC
   storageClassName: ""
   persistentVolumeReclaimPolicy: Retain
-  # hostPath apunta al directorio de logs en el nodo Minikube
   hostPath:
     path: {{ .Values.persistence.hostPath | quote }}
     type: DirectoryOrCreate

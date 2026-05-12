@@ -65,7 +65,8 @@ spec:
             periodSeconds: 10
             failureThreshold: 3
 
-          # Montar el volumen de logs en el directorio de la app
+          # Montar el volumen de logs donde la app escribe (index.js usa path.join(__dirname, 'logs'))
+          # Dentro del contenedor: /app/src/logs/app.log
           volumeMounts:
             - name: app-logs
               mountPath: /app/src/logs

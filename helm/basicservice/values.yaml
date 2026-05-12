@@ -1,39 +1,40 @@
-# values.yaml — Valores por defecto para basicservice Helm Chart
-# Todos los valores son parametrizables y pueden sobreescribirse en tiempo de despliegue
+# values.yaml -- Valores por defecto para basicservice Helm Chart
 
-# Imagen Docker de la aplicación
+# Imagen Docker de la aplicacion
 image:
   repository: basicservice
   tag: "latest"
   pullPolicy: IfNotPresent
 
-# Número de réplicas del Deployment
+# Numero de replicas del Deployment
 replicaCount: 1
 
-# Configuración del Service (ClusterIP)
+# Configuracion del Service (ClusterIP)
 service:
   port: 3000
 
-# Configuración del Ingress
+# Configuracion del Ingress
 ingress:
   enabled: true
   className: nginx
   host: basicservice.local
+  tls:
+    enabled: true
+    secretName: basicservice-tls
 
-# Configuración de autenticación HTTP Basic para /private
+# Configuracion de autenticacion HTTP Basic para /private
 auth:
   secretName: basicservice-htpasswd
   realm: "Restricted"
   # htpasswdContent se pasa via --set en tiempo de despliegue
-  # Ejemplo: --set auth.htpasswdContent="admin:$(openssl passwd -apr1 password)"
   htpasswdContent: ""
 
-# Configuración de persistencia de logs (hostPath)
+# Configuracion de persistencia de logs (hostPath)
 persistence:
   hostPath: /mnt/logs/basicservice
   storageSize: 1Gi
 
-# SecurityContext del contenedor (principio de mínimo privilegio)
+# SecurityContext del contenedor (principio de minimo privilegio)
 securityContext:
   runAsUser: 1000
   runAsNonRoot: true

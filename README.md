@@ -1,15 +1,15 @@
-# Reto DevOps i2btech — basicservice
+# Reto DevOps i2btech -- basicservice
 
-Despliegue completo de la aplicación Node.js/Express `basicservice` en cuatro fases progresivas: contenerización con Docker y Nginx, empaquetado con Helm Chart, despliegue declarativo con Terraform y orquestación end-to-end con Ansible sobre Minikube.
+Despliegue completo de la aplicacion Node.js/Express `basicservice` en cuatro fases progresivas: contenedorizacion con Docker y Nginx, empaquetado con Helm Chart, despliegue declarativo con Terraform y orquestacion end-to-end con Ansible sobre Minikube.
 
-## Descripción
+## Descripcion
 
-La aplicación expone cuatro endpoints en el puerto 3000:
+La aplicacion expone cuatro endpoints en el puerto 3000:
 
-| Endpoint | Descripción | Autenticación |
+| Endpoint | Descripcion | Autenticacion |
 |---|---|---|
 | `GET /` | Mensaje de bienvenida | No |
-| `GET /public` | Token público | No |
+| `GET /public` | Token publico | No |
 | `GET /private` | Token privado | HTTP Basic |
 | `GET /health_check` | Estado de salud | No |
 
@@ -17,52 +17,48 @@ La aplicación expone cuatro endpoints en el puerto 3000:
 
 ## Prerrequisitos
 
-| Herramienta | Versión mínima | Instalación |
+Para ejecutar cada fase de forma independiente se necesitan las herramientas correspondientes. Para la **Fase 4 (Ansible)**, solo se necesita Ansible instalado -- el playbook instala todo lo demas automaticamente.
+
+| Herramienta | Fase | Instalacion |
 |---|---|---|
-| Docker | 24.x | [docs.docker.com](https://docs.docker.com/engine/install/) |
-| Docker Compose | v2.x | Incluido con Docker Desktop |
-| kubectl | v1.30+ | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) |
-| Minikube | v1.33+ | [minikube.sigs.k8s.io](https://minikube.sigs.k8s.io/docs/start/) |
-| Helm | v3.15+ | [helm.sh](https://helm.sh/docs/intro/install/) |
-| Terraform | v1.8+ | [developer.hashicorp.com](https://developer.hashicorp.com/terraform/install) |
-| Ansible | v2.15+ | `pip install ansible` |
-| openssl | cualquiera | Incluido en la mayoría de sistemas |
-| htpasswd | cualquiera | `apt install apache2-utils` |
+| Docker + Compose | Fase 1 | [docs.docker.com](https://docs.docker.com/engine/install/) |
+| Helm v3.15+ | Fase 2 | [helm.sh](https://helm.sh/docs/intro/install/) |
+| Terraform v1.8+ | Fase 3 | [developer.hashicorp.com](https://developer.hashicorp.com/terraform/install) |
+| Ansible v2.15+ | Fase 4 | `pip install ansible` |
+| openssl | Fase 1 | Incluido en la mayoria de sistemas |
 
 ---
 
-## Generación de Secretos (requerido antes de cualquier fase)
+## Generacion de Secretos (solo para Fase 1 -- Docker Compose)
 
-Los archivos sensibles **nunca** se incluyen en el repositorio. Deben generarse localmente antes de ejecutar cualquier fase.
-
-### 1. Certificado TLS autofirmado
+Los archivos sensibles nunca se incluyen en el repositorio. Para la Fase 1 (Docker Compose), se generan automaticamente con el script incluido:
 
 ```bash
-# Generar clave privada y certificado autofirmado (válido 365 días)
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout secrets/nginx.key \
-  -out secrets/nginx.crt \
-  -subj "/C=CL/ST=Santiago/L=Santiago/O=i2btech/CN=localhost"
+chmod +x setup.sh
+./setup.sh            # usa password por defecto: admin123
+./setup.sh mi_pass    # o con password personalizado
 ```
 
-### 2. Archivo htpasswd para autenticación HTTP Basic
+El script genera:
+- `secrets/nginx.crt` y `secrets/nginx.key` -- certificado TLS autofirmado
+- `secrets/.htpasswd` -- credenciales HTTP Basic
 
-```bash
-# Opción A: usando htpasswd (requiere apache2-utils)
-htpasswd -c secrets/.htpasswd admin
-# Ingresa la contraseña cuando se solicite
-
-# Opción B: usando openssl (sin dependencias adicionales)
-echo "admin:$(openssl passwd -apr1 'tu_contraseña_segura')" > secrets/.htpasswd
-```
+> Para la Fase 4 (Ansible), el playbook genera todo automaticamente sin necesidad de secretos previos.
 
 ---
 
 ## Fase 1: Docker Compose (entorno local HTTPS)
 
-### Levantar el entorno
+### Generar secretos y levantar el entorno
 
 ```bash
+# Generar certificados TLS y archivo htpasswd automaticamente
+chmod +x setup.sh
+./setup.sh
+
+# O con una password personalizada
+./setup.sh mi_password_segura
+
 # Construir la imagen y levantar los servicios
 docker compose up -d
 
@@ -76,19 +72,19 @@ docker compose logs -f
 # Health check (debe responder "Ok")
 curl -k https://localhost/health_check
 
-# Ruta raíz (debe responder JSON con msg)
+# Ruta raiz (debe responder JSON con msg)
 curl -k https://localhost/
 
-# Ruta pública (debe responder JSON con public_token)
+# Ruta publica (debe responder JSON con public_token)
 curl -k https://localhost/public
 
 # Ruta privada con credenciales (debe responder JSON con private_token)
-curl -k -u admin:tu_contraseña https://localhost/private
+curl -k -u admin:admin123 https://localhost/private
 
 # Ruta privada sin credenciales (debe responder 401)
 curl -k -I https://localhost/private
 
-# Verificar redirección HTTP → HTTPS (debe responder 301)
+# Verificar redireccion HTTP -> HTTPS (debe responder 301)
 curl -I http://localhost/
 ```
 
@@ -96,7 +92,7 @@ curl -I http://localhost/
 
 ```bash
 docker compose down
-# Para eliminar también el volumen de logs:
+# Para eliminar tambien el volumen de logs:
 docker compose down -v
 ```
 
@@ -128,12 +124,13 @@ helm template basicservice helm/basicservice \
 ### Instalar el chart
 
 ```bash
-# Instalar con credenciales
+# Instalar con credenciales en namespace dedicado
 helm install basicservice helm/basicservice \
-  --set auth.htpasswdContent="admin:$(openssl passwd -apr1 'tu_contraseña')"
+  --namespace basicservice --create-namespace \
+  --set auth.htpasswdContent="admin:$(openssl passwd -apr1 'tu_password')"
 
 # Verificar el despliegue
-kubectl get pods,svc,ingress,pv,pvc
+kubectl get pods,svc,ingress,pv,pvc -n basicservice
 ```
 
 ### Verificar endpoints en Minikube
@@ -142,14 +139,15 @@ kubectl get pods,svc,ingress,pv,pvc
 # Obtener IP de Minikube
 MINIKUBE_IP=$(minikube ip)
 
-# Agregar entrada en /etc/hosts (opcional)
+# Agregar entrada en /etc/hosts
 echo "$MINIKUBE_IP basicservice.local" | sudo tee -a /etc/hosts
 
-# Verificar endpoints
-curl -k http://basicservice.local/health_check
-curl -k http://basicservice.local/public
-curl -k -u admin:tu_contraseña http://basicservice.local/private
-curl -k -I http://basicservice.local/private  # → 401
+# Verificar endpoints via HTTPS
+curl -k https://basicservice.local/health_check
+curl -k https://basicservice.local/
+curl -k https://basicservice.local/public
+curl -k -u admin:tu_password https://basicservice.local/private
+curl -k -I https://basicservice.local/private  # -> 401
 ```
 
 ---
@@ -162,7 +160,7 @@ curl -k -I http://basicservice.local/private  # → 401
 # Copiar el archivo de ejemplo
 cp terraform/deploy/minikube/terraform.tfvars.example terraform/deploy/minikube/terraform.tfvars
 
-# Editar con valores reales (este archivo está en .gitignore)
+# Editar con valores reales (este archivo esta en .gitignore)
 nano terraform/deploy/minikube/terraform.tfvars
 ```
 
@@ -171,7 +169,7 @@ nano terraform/deploy/minikube/terraform.tfvars
 ```bash
 cd terraform/deploy/minikube
 
-# Inicializar providers y módulos
+# Inicializar providers y modulos
 terraform init
 
 # Revisar el plan de despliegue
@@ -180,11 +178,16 @@ terraform plan
 # Aplicar el despliegue
 terraform apply
 
-# O con variables directamente (sin terraform.tfvars)
+# O con la variable directamente (sin terraform.tfvars)
 terraform apply \
-  -var="htpasswd_user=admin" \
-  -var="htpasswd_password=tu_contraseña"
+  -var="htpasswd_content=$(htpasswd -nb admin tu_password)"
 ```
+
+Terraform crea automaticamente:
+- Namespace `basicservice`
+- Certificado TLS autofirmado para el Ingress
+- Secret TLS en el namespace
+- Helm release con la aplicacion
 
 ### Destruir el despliegue
 
@@ -195,37 +198,37 @@ terraform destroy
 
 ---
 
-## Fase 4: Ansible (orquestación completa)
-
-### Configurar el vault de credenciales
-
-```bash
-# Copiar el archivo de ejemplo
-cp ansible/vars/vault.yml.example ansible/vars/vault.yml
-
-# Editar con credenciales reales
-nano ansible/vars/vault.yml
-
-# Cifrar el archivo con Ansible Vault
-ansible-vault encrypt ansible/vars/vault.yml
-```
+## Fase 4: Ansible (orquestacion completa)
 
 ### Ejecutar el playbook
 
 ```bash
-# Ejecutar el playbook completo (instala todo desde cero)
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --ask-vault-pass
+# Ejecutar el playbook completo (instala todo desde cero en Ubuntu 24.04)
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+
+# Con credenciales personalizadas
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+  -e htpasswd_user=admin -e htpasswd_password=mi_password
 
 # Con verbose para ver detalles
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --ask-vault-pass -v
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -v
 ```
 
-El playbook realiza automáticamente:
+El playbook realiza automaticamente:
 1. Instala Docker, kubectl, Minikube, Helm y Terraform
 2. Inicia Minikube con driver Docker
 3. Habilita el addon Ingress
-4. Ejecuta `terraform init` y `terraform apply`
-5. Verifica los cuatro endpoints
+4. Construye la imagen Docker dentro de Minikube
+5. Crea namespace `basicservice` via Terraform
+6. Genera certificado TLS y despliega con Terraform + Helm
+7. Configura `/etc/hosts` para `basicservice.local`
+8. Verifica los cuatro endpoints via HTTPS
+
+Luego de ejecutar el playbook, los 4 endpoints estan disponibles en:
+- https://basicservice.local/
+- https://basicservice.local/public
+- https://basicservice.local/private (requiere credenciales)
+- https://basicservice.local/health_check
 
 ---
 
@@ -235,11 +238,12 @@ El playbook realiza automáticamente:
 .
 ├── Dockerfile                    # Imagen Docker de la app
 ├── .dockerignore                 # Exclusiones del build Docker
-├── docker-compose.yml            # Orquestación local con Nginx
+├── docker-compose.yml            # Orquestacion local con Nginx HTTPS
+├── setup.sh                      # Script para generar secretos (Fase 1)
 ├── .gitignore                    # Exclusiones del repositorio
 ├── README.md                     # Este archivo
 ├── nginx/
-│   └── nginx.conf                # Configuración Nginx (TLS + auth_basic)
+│   └── nginx.conf                # Configuracion Nginx (TLS + auth_basic)
 ├── secrets/
 │   └── .gitkeep                  # Directorio para secretos (no en repo)
 ├── helm/
@@ -249,27 +253,25 @@ El playbook realiza automáticamente:
 │       └── templates/
 │           ├── deployment.yaml   # Deployment con SecurityContext y probes
 │           ├── service.yaml      # Service ClusterIP
-│           ├── ingress.yaml      # Ingress con auth_basic en /private
+│           ├── ingress.yaml      # Ingress con TLS y auth_basic en /private
 │           ├── pv.yaml           # PersistentVolume hostPath
 │           ├── pvc.yaml          # PersistentVolumeClaim
 │           └── secret.yaml       # Secret con htpasswd
 ├── terraform/
 │   ├── modules/
-│   │   └── basicservice/         # Módulo reutilizable
-│   │       ├── main.tf           # helm_release + locals htpasswd
-│   │       ├── variables.tf      # Variables del módulo
-│   │       └── outputs.tf        # Outputs del módulo
+│   │   └── basicservice/         # Modulo reutilizable
+│   │       ├── main.tf           # helm_release
+│   │       ├── variables.tf      # Variables del modulo
+│   │       └── outputs.tf        # Outputs del modulo
 │   └── deploy/
 │       └── minikube/             # Entorno de despliegue Minikube
-│           ├── main.tf           # Provider + invocación del módulo
+│           ├── main.tf           # Namespace + TLS + Helm via modulo
 │           ├── variables.tf      # Variables del entorno
 │           ├── outputs.tf        # Outputs del entorno
 │           └── terraform.tfvars.example
 └── ansible/
     ├── inventory.ini             # Inventario (localhost)
-    ├── playbook.yml              # Playbook de orquestación completa
-    └── vars/
-        └── vault.yml.example     # Estructura del vault (sin secretos)
+    └── playbook.yml              # Playbook de orquestacion completa
 ```
 
 ---
@@ -278,36 +280,17 @@ El playbook realiza automáticamente:
 
 ### Archivos excluidos del repositorio
 
-Los siguientes archivos **nunca** deben estar en el repositorio:
+Los siguientes archivos nunca deben estar en el repositorio:
 
-- `secrets/nginx.crt`, `secrets/nginx.key` — certificados TLS
-- `secrets/.htpasswd` — credenciales HTTP Basic
-- `terraform/terraform.tfvars` — variables con secretos
-- `terraform/terraform.tfstate` — estado de Terraform
-- `ansible/vars/vault.yml` — vault cifrado con credenciales
-
-### Procedimiento de emergencia: purgar historial git
-
-Si accidentalmente se commitea un archivo sensible:
-
-```bash
-# Instalar git-filter-repo
-pip install git-filter-repo
-
-# Eliminar el archivo del historial completo
-git filter-repo --path secrets/nginx.key --invert-paths
-
-# Forzar push (DESTRUCTIVO — coordinar con el equipo)
-git push origin --force --all
-
-# Revocar y regenerar las credenciales comprometidas inmediatamente
-```
-
-> **Importante**: Después de purgar el historial, todos los colaboradores deben clonar el repositorio nuevamente. Las credenciales comprometidas deben revocarse inmediatamente, independientemente de si se purga el historial.
+- `secrets/nginx.crt`, `secrets/nginx.key` -- certificados TLS
+- `secrets/.htpasswd` -- credenciales HTTP Basic
+- `terraform/**/*.tfvars` -- variables con secretos
+- `terraform/**/*.tfstate` -- estado de Terraform
+- `helm/**/auth-values.yaml` -- values con credenciales
 
 ---
 
-## Solución de Problemas
+## Solucion de Problemas
 
 ### Docker Compose no levanta
 
@@ -322,7 +305,7 @@ docker compose logs app
 
 ### Nginx retorna 502 Bad Gateway
 
-La app no está disponible. Verificar:
+La app no esta disponible. Verificar:
 ```bash
 docker compose ps
 docker compose logs app
@@ -332,14 +315,14 @@ docker compose logs app
 
 El PV hostPath no existe. Verificar:
 ```bash
-kubectl describe pvc basicservice-logs-pvc
+kubectl describe pvc basicservice-logs-pvc -n basicservice
 # Crear el directorio en el nodo Minikube si es necesario:
 minikube ssh -- sudo mkdir -p /mnt/logs/basicservice
 ```
 
-### Terraform falla con error de conexión
+### Terraform falla con error de conexion
 
-Minikube no está corriendo:
+Minikube no esta corriendo:
 ```bash
 minikube status
 minikube start --driver=docker

@@ -1,5 +1,5 @@
 {{- if .Values.ingress.enabled }}
-# Ingress para rutas públicas — sin autenticación
+# Ingress para rutas publicas -- sin autenticacion
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,8 +7,16 @@ metadata:
   labels:
     app: basicservice
     release: {{ .Release.Name }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.host }}
       http:
@@ -35,7 +43,7 @@ spec:
                 port:
                   number: {{ .Values.service.port }}
 ---
-# Ingress para /private — con autenticación HTTP Basic
+# Ingress para /private -- con autenticacion HTTP Basic
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -47,8 +55,15 @@ metadata:
     nginx.ingress.kubernetes.io/auth-type: "basic"
     nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName | quote }}
     nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.host }}
       http:

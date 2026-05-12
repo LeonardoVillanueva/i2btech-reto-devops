@@ -1,5 +1,5 @@
 # =============================================================================
-# .gitignore — Reto DevOps i2btech
+# .gitignore -- Reto DevOps i2btech
 # Excluye archivos sensibles, secretos y artefactos generados
 # =============================================================================
 
@@ -18,15 +18,12 @@ secrets/.htpasswd
 !.env.example
 
 # --- Terraform ---
-terraform.tfstate
-terraform.tfstate.backup
-terraform/.terraform/
-terraform/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.backup
+**/.terraform/
+**/.terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
-
-# --- Ansible Vault (secretos cifrados) ---
-ansible/vars/vault.yml
 
 # --- Node.js ---
 node_modules/
@@ -45,3 +42,4 @@ Thumbs.db
 # --- IDE ---
 .vscode/
 .idea/
+.kiro/

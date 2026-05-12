@@ -1,20 +1,21 @@
 ---
-# playbook.yml — Orquestación completa del reto DevOps i2btech
-# Prepara una máquina Ubuntu 24.04 desde cero y despliega basicservice en Minikube
+# playbook.yml -- Orquestacion completa del reto DevOps i2btech
+# Prepara una maquina Ubuntu 24.04 desde cero y despliega basicservice en Minikube
 #
 # Uso:
-#   ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+#   ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+#
+# Para sobreescribir credenciales:
+#   ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+#     -e htpasswd_user=admin -e htpasswd_password=mi_password
 #
 # Prerrequisitos:
 #   - Ubuntu 24.04 con sudo sin contraseña
-#   - ansible/vars/vault.yml cifrado con ansible-vault (ver vault.yml.example)
-#   - El repositorio clonado en el home del usuario
+#   - El repositorio clonado en la maquina
 
-- name: Reto DevOps i2btech — Despliegue completo de basicservice
+- name: Reto DevOps i2btech - Despliegue completo de basicservice
   hosts: local
   become: true
-  vars_files:
-    - vars/vault.yml
 
   vars:
     # Versiones de herramientas
@@ -23,7 +24,7 @@
     helm_version: "v3.15.0"
     terraform_version: "1.8.5"
 
-    # Rutas de instalación
+    # Rutas de instalacion
     kubectl_bin: /usr/local/bin/kubectl
     minikube_bin: /usr/local/bin/minikube
     helm_bin: /usr/local/bin/helm
@@ -32,9 +33,16 @@
     project_dir: "{{ playbook_dir }}/.."
     terraform_dir: "{{ project_dir }}/terraform/deploy/minikube"
 
-    # Credenciales desde vault
-    htpasswd_user: "{{ vault_htpasswd_user }}"
-    htpasswd_password: "{{ vault_htpasswd_password }}"
+    # Namespace de Kubernetes
+    app_namespace: "basicservice"
+
+    # Credenciales para auth_basic en /private
+    # Sobreescribibles con: -e htpasswd_user=otro -e htpasswd_password=otro
+    htpasswd_user: "admin"
+    htpasswd_password: "admin123"
+
+    # Usuario que ejecuta el playbook (para comandos sin become)
+    deploy_user: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
 
   tasks:
     # =========================================================================
@@ -90,9 +98,14 @@
 
     - name: Agregar usuario al grupo docker
       user:
-        name: "{{ ansible_user }}"
+        name: "{{ deploy_user }}"
         groups: docker
         append: true
+
+    - name: Asegurar que el socket de Docker sea accesible
+      file:
+        path: /var/run/docker.sock
+        mode: "0666"
 
     # =========================================================================
     # FASE 3: Instalar kubectl
@@ -102,7 +115,6 @@
         url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
         dest: "{{ kubectl_bin }}"
         mode: "0755"
-        creates: "{{ kubectl_bin }}"
 
     # =========================================================================
     # FASE 4: Instalar Minikube
@@ -112,17 +124,16 @@
         url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-amd64"
         dest: "{{ minikube_bin }}"
         mode: "0755"
-        creates: "{{ minikube_bin }}"
 
     # =========================================================================
     # FASE 5: Instalar Helm
     # =========================================================================
-    - name: Verificar si Helm ya está instalado
+    - name: Verificar si Helm ya esta instalado
       stat:
         path: "{{ helm_bin }}"
       register: helm_stat
 
-    - name: Descargar script de instalación de Helm
+    - name: Descargar script de instalacion de Helm
       get_url:
         url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
         dest: /tmp/get_helm.sh
@@ -158,33 +169,37 @@
     # FASE 7: Iniciar Minikube con driver Docker
     # =========================================================================
     - name: Verificar estado de Minikube
-      command: minikube status --format "{{.Host}}"
+      command: "minikube status --format {{ '{{.Host}}' }}"
       register: minikube_status
       changed_when: false
       failed_when: false
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
 
     - name: Iniciar Minikube con driver Docker
       command: minikube start --driver=docker --memory=3900 --cpus=2
       when: minikube_status.stdout | trim != 'Running'
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
 
     # =========================================================================
     # FASE 8: Habilitar addon Ingress
     # =========================================================================
     - name: Habilitar addon ingress de Minikube
       command: minikube addons enable ingress
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
       register: ingress_result
       changed_when: "'already enabled' not in ingress_result.stdout"
 
-    - name: Esperar a que el Ingress Controller esté listo
+    - name: Esperar a que el Ingress Controller este listo
       command: >
         kubectl wait --namespace ingress-nginx
         --for=condition=ready pod
         --selector=app.kubernetes.io/component=controller
         --timeout=180s
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
 
     # =========================================================================
     # FASE 9: Construir imagen Docker dentro de Minikube
@@ -193,7 +208,8 @@
       shell: |
         eval $(minikube docker-env)
         docker build -t basicservice:latest {{ project_dir }}
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
       args:
         executable: /bin/bash
 
@@ -201,8 +217,12 @@
     # FASE 10: Preparar directorio de logs en el nodo Minikube
     # =========================================================================
     - name: Crear directorio de logs en el nodo Minikube
-      command: minikube ssh "sudo mkdir -p /mnt/logs/basicservice && sudo chown -R 1000:1000 /mnt/logs/basicservice && sudo chmod 775 /mnt/logs/basicservice"
-      become: false
+      command: >
+        minikube ssh "sudo mkdir -p /mnt/logs/basicservice &&
+        sudo chown -R 1000:1000 /mnt/logs/basicservice &&
+        sudo chmod 775 /mnt/logs/basicservice"
+      become: true
+      become_user: "{{ deploy_user }}"
 
     # =========================================================================
     # FASE 11: Generar htpasswd y desplegar con Terraform
@@ -217,7 +237,8 @@
       command: terraform init -input=false
       args:
         chdir: "{{ terraform_dir }}"
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
       environment:
         TF_VAR_htpasswd_content: "{{ htpasswd_content.stdout }}"
 
@@ -225,7 +246,8 @@
       command: terraform apply -auto-approve -input=false
       args:
         chdir: "{{ terraform_dir }}"
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
       environment:
         TF_VAR_htpasswd_content: "{{ htpasswd_content.stdout }}"
 
@@ -236,7 +258,8 @@
       command: minikube ip
       register: minikube_ip
       changed_when: false
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
 
     - name: Agregar basicservice.local a /etc/hosts
       lineinfile:
@@ -248,16 +271,18 @@
     # =========================================================================
     # FASE 13: Verificar los cuatro endpoints
     # =========================================================================
-    - name: Esperar a que el pod basicservice esté listo
+    - name: Esperar a que el pod basicservice este listo
       command: >
-        kubectl wait --for=condition=ready pod
+        kubectl wait --namespace {{ app_namespace }}
+        --for=condition=ready pod
         --selector=app=basicservice
         --timeout=180s
-      become: false
+      become: true
+      become_user: "{{ deploy_user }}"
 
     - name: Verificar endpoint GET /health_check
       uri:
-        url: "http://basicservice.local/health_check"
+        url: "https://basicservice.local/health_check"
         method: GET
         status_code: 200
         validate_certs: false
@@ -265,11 +290,10 @@
       retries: 10
       delay: 15
       until: health_check_result.status == 200
-      failed_when: health_check_result.status != 200
 
     - name: Verificar endpoint GET /
       uri:
-        url: "http://basicservice.local/"
+        url: "https://basicservice.local/"
         method: GET
         status_code: 200
         validate_certs: false
@@ -280,7 +304,7 @@
 
     - name: Verificar endpoint GET /public
       uri:
-        url: "http://basicservice.local/public"
+        url: "https://basicservice.local/public"
         method: GET
         status_code: 200
         validate_certs: false
@@ -291,7 +315,7 @@
 
     - name: Verificar endpoint GET /private sin credenciales (debe retornar 401)
       uri:
-        url: "http://basicservice.local/private"
+        url: "https://basicservice.local/private"
         method: GET
         status_code: 401
         validate_certs: false
@@ -302,7 +326,7 @@
 
     - name: Verificar endpoint GET /private con credenciales (debe retornar 200)
       uri:
-        url: "http://basicservice.local/private"
+        url: "https://basicservice.local/private"
         method: GET
         status_code: 200
         url_username: "{{ htpasswd_user }}"
@@ -314,13 +338,13 @@
       delay: 10
       until: private_auth_result.status == 200
 
-    - name: Resumen de verificación de endpoints
+    - name: Resumen de verificacion de endpoints
       debug:
         msg:
-          - "✅ GET /health_check  → HTTP {{ health_check_result.status }}"
-          - "✅ GET /              → HTTP {{ root_result.status }}"
-          - "✅ GET /public        → HTTP {{ public_result.status }}"
-          - "✅ GET /private (401) → HTTP {{ private_unauth_result.status }}"
-          - "✅ GET /private (200) → HTTP {{ private_auth_result.status }}"
+          - "GET /health_check  -> HTTPS {{ health_check_result.status }} OK"
+          - "GET /              -> HTTPS {{ root_result.status }} OK"
+          - "GET /public        -> HTTPS {{ public_result.status }} OK"
+          - "GET /private (401) -> HTTPS {{ private_unauth_result.status }} OK"
+          - "GET /private (200) -> HTTPS {{ private_auth_result.status }} OK"
           - ""
-          - "🎉 Todos los endpoints están disponibles en http://basicservice.local"
+          - "Todos los endpoints disponibles en https://basicservice.local"

@@ -1,13 +1,12 @@
 # Dependencias instaladas localmente (se reinstalan en el build)
 node_modules/
-i2btech-reto-devops/i2btech-reto-devops/src/node_modules/
+i2btech-reto-devops/src/node_modules/
 
 # Logs generados en runtime
-src/logs/
-i2btech-reto-devops/i2btech-reto-devops/src/logs/
+i2btech-reto-devops/src/logs/
 
 # Archivos de test
-i2btech-reto-devops/i2btech-reto-devops/src/tests/
+i2btech-reto-devops/src/tests/
 **/*.test.js
 **/*.spec.js
 
@@ -24,6 +23,12 @@ secrets/
 # Documentación
 README.md
 *.md
+
+# Infraestructura (no necesaria en la imagen)
+helm/
+terraform/
+ansible/
+nginx/
 
 # Archivos de sistema
 .DS_Store

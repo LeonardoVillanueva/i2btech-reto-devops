@@ -1,11 +1,11 @@
 # modules/basicservice/main.tf
-# Módulo reutilizable para desplegar basicservice via Helm
+# Modulo reutilizable para desplegar basicservice via Helm
 
 resource "helm_release" "basicservice" {
   name             = var.release_name
   chart            = var.chart_path
   namespace        = var.namespace
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = var.timeout_seconds
 
@@ -37,5 +37,10 @@ resource "helm_release" "basicservice" {
   set {
     name  = "ingress.host"
     value = var.ingress_host
+  }
+
+  set {
+    name  = "ingress.tls.secretName"
+    value = var.tls_secret_name
   }
 }

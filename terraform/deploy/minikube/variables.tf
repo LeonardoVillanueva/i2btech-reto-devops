@@ -1,5 +1,5 @@
 # deploy/minikube/variables.tf
-# Variables específicas del entorno Minikube
+# Variables especificas del entorno Minikube
 
 variable "kubeconfig_path" {
   description = "Ruta al kubeconfig de Minikube"
@@ -14,7 +14,7 @@ variable "chart_path" {
 }
 
 variable "namespace" {
-  description = "Namespace de Kubernetes"
+  description = "Namespace de Kubernetes para la aplicacion"
   type        = string
   default     = "basicservice"
 }
@@ -38,7 +38,7 @@ variable "image_tag" {
 }
 
 variable "replica_count" {
-  description = "Número de réplicas"
+  description = "Numero de replicas"
   type        = number
   default     = 1
 }

@@ -1,5 +1,5 @@
 # modules/basicservice/variables.tf
-# Variables de entrada del módulo — todas con descripción y tipo explícito
+# Variables de entrada del modulo
 
 variable "release_name" {
   description = "Nombre del Helm release"
@@ -13,7 +13,7 @@ variable "chart_path" {
 }
 
 variable "namespace" {
-  description = "Namespace de Kubernetes donde se desplegará el chart"
+  description = "Namespace de Kubernetes donde se desplegara el chart"
   type        = string
   default     = "basicservice"
 }
@@ -37,7 +37,7 @@ variable "image_tag" {
 }
 
 variable "replica_count" {
-  description = "Número de réplicas del Deployment"
+  description = "Numero de replicas del Deployment"
   type        = number
   default     = 1
 }
@@ -54,8 +54,14 @@ variable "ingress_host" {
   default     = "basicservice.local"
 }
 
+variable "tls_secret_name" {
+  description = "Nombre del Secret TLS para el Ingress"
+  type        = string
+  default     = "basicservice-tls"
+}
+
 variable "timeout_seconds" {
-  description = "Timeout en segundos para esperar que el Helm release esté listo"
+  description = "Timeout en segundos para esperar que el Helm release este listo"
   type        = number
   default     = 300
 }

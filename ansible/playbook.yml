@@ -1,0 +1,326 @@
+---
+# playbook.yml — Orquestación completa del reto DevOps i2btech
+# Prepara una máquina Ubuntu 24.04 desde cero y despliega basicservice en Minikube
+#
+# Uso:
+#   ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+#
+# Prerrequisitos:
+#   - Ubuntu 24.04 con sudo sin contraseña
+#   - ansible/vars/vault.yml cifrado con ansible-vault (ver vault.yml.example)
+#   - El repositorio clonado en el home del usuario
+
+- name: Reto DevOps i2btech — Despliegue completo de basicservice
+  hosts: local
+  become: true
+  vars_files:
+    - vars/vault.yml
+
+  vars:
+    # Versiones de herramientas
+    kubectl_version: "v1.30.0"
+    minikube_version: "v1.33.0"
+    helm_version: "v3.15.0"
+    terraform_version: "1.8.5"
+
+    # Rutas de instalación
+    kubectl_bin: /usr/local/bin/kubectl
+    minikube_bin: /usr/local/bin/minikube
+    helm_bin: /usr/local/bin/helm
+
+    # Directorio del proyecto (relativo al playbook)
+    project_dir: "{{ playbook_dir }}/.."
+    terraform_dir: "{{ project_dir }}/terraform/deploy/minikube"
+
+    # Credenciales desde vault
+    htpasswd_user: "{{ vault_htpasswd_user }}"
+    htpasswd_password: "{{ vault_htpasswd_password }}"
+
+  tasks:
+    # =========================================================================
+    # FASE 1: Instalar dependencias base
+    # =========================================================================
+    - name: Actualizar cache de apt
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar dependencias base
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - apache2-utils
+          - python3-pip
+        state: present
+
+    # =========================================================================
+    # FASE 2: Instalar Docker
+    # =========================================================================
+    - name: Agregar clave GPG oficial de Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Agregar repositorio de Docker
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Instalar Docker Engine
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Iniciar y habilitar el servicio Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Agregar usuario al grupo docker
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    # =========================================================================
+    # FASE 3: Instalar kubectl
+    # =========================================================================
+    - name: Descargar kubectl {{ kubectl_version }}
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: "{{ kubectl_bin }}"
+        mode: "0755"
+        creates: "{{ kubectl_bin }}"
+
+    # =========================================================================
+    # FASE 4: Instalar Minikube
+    # =========================================================================
+    - name: Descargar Minikube {{ minikube_version }}
+      get_url:
+        url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-amd64"
+        dest: "{{ minikube_bin }}"
+        mode: "0755"
+        creates: "{{ minikube_bin }}"
+
+    # =========================================================================
+    # FASE 5: Instalar Helm
+    # =========================================================================
+    - name: Verificar si Helm ya está instalado
+      stat:
+        path: "{{ helm_bin }}"
+      register: helm_stat
+
+    - name: Descargar script de instalación de Helm
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: "0755"
+      when: not helm_stat.stat.exists
+
+    - name: Instalar Helm via script oficial
+      command: /tmp/get_helm.sh
+      environment:
+        DESIRED_VERSION: "{{ helm_version }}"
+      when: not helm_stat.stat.exists
+
+    # =========================================================================
+    # FASE 6: Instalar Terraform
+    # =========================================================================
+    - name: Agregar clave GPG de HashiCorp
+      apt_key:
+        url: https://apt.releases.hashicorp.com/gpg
+        state: present
+
+    - name: Agregar repositorio de HashiCorp
+      apt_repository:
+        repo: "deb [arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+        state: present
+
+    - name: Instalar Terraform
+      apt:
+        name: "terraform={{ terraform_version }}-1"
+        state: present
+        update_cache: true
+
+    # =========================================================================
+    # FASE 7: Iniciar Minikube con driver Docker
+    # =========================================================================
+    - name: Verificar estado de Minikube
+      command: minikube status --format "{{.Host}}"
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Iniciar Minikube con driver Docker
+      command: minikube start --driver=docker --memory=3900 --cpus=2
+      when: minikube_status.stdout | trim != 'Running'
+      become: false
+
+    # =========================================================================
+    # FASE 8: Habilitar addon Ingress
+    # =========================================================================
+    - name: Habilitar addon ingress de Minikube
+      command: minikube addons enable ingress
+      become: false
+      register: ingress_result
+      changed_when: "'already enabled' not in ingress_result.stdout"
+
+    - name: Esperar a que el Ingress Controller esté listo
+      command: >
+        kubectl wait --namespace ingress-nginx
+        --for=condition=ready pod
+        --selector=app.kubernetes.io/component=controller
+        --timeout=180s
+      become: false
+
+    # =========================================================================
+    # FASE 9: Construir imagen Docker dentro de Minikube
+    # =========================================================================
+    - name: Construir imagen Docker de basicservice en Minikube
+      shell: |
+        eval $(minikube docker-env)
+        docker build -t basicservice:latest {{ project_dir }}
+      become: false
+      args:
+        executable: /bin/bash
+
+    # =========================================================================
+    # FASE 10: Preparar directorio de logs en el nodo Minikube
+    # =========================================================================
+    - name: Crear directorio de logs en el nodo Minikube
+      command: minikube ssh "sudo mkdir -p /mnt/logs/basicservice && sudo chown -R 1000:1000 /mnt/logs/basicservice && sudo chmod 775 /mnt/logs/basicservice"
+      become: false
+
+    # =========================================================================
+    # FASE 11: Generar htpasswd y desplegar con Terraform
+    # =========================================================================
+    - name: Generar contenido htpasswd
+      command: htpasswd -nb "{{ htpasswd_user }}" "{{ htpasswd_password }}"
+      register: htpasswd_content
+      changed_when: false
+      no_log: true
+
+    - name: Ejecutar terraform init
+      command: terraform init -input=false
+      args:
+        chdir: "{{ terraform_dir }}"
+      become: false
+      environment:
+        TF_VAR_htpasswd_content: "{{ htpasswd_content.stdout }}"
+
+    - name: Ejecutar terraform apply
+      command: terraform apply -auto-approve -input=false
+      args:
+        chdir: "{{ terraform_dir }}"
+      become: false
+      environment:
+        TF_VAR_htpasswd_content: "{{ htpasswd_content.stdout }}"
+
+    # =========================================================================
+    # FASE 12: Configurar /etc/hosts para basicservice.local
+    # =========================================================================
+    - name: Obtener IP de Minikube
+      command: minikube ip
+      register: minikube_ip
+      changed_when: false
+      become: false
+
+    - name: Agregar basicservice.local a /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ minikube_ip.stdout }} basicservice.local"
+        state: present
+        regexp: "basicservice.local"
+
+    # =========================================================================
+    # FASE 13: Verificar los cuatro endpoints
+    # =========================================================================
+    - name: Esperar a que el pod basicservice esté listo
+      command: >
+        kubectl wait --for=condition=ready pod
+        --selector=app=basicservice
+        --timeout=180s
+      become: false
+
+    - name: Verificar endpoint GET /health_check
+      uri:
+        url: "http://basicservice.local/health_check"
+        method: GET
+        status_code: 200
+        validate_certs: false
+      register: health_check_result
+      retries: 10
+      delay: 15
+      until: health_check_result.status == 200
+      failed_when: health_check_result.status != 200
+
+    - name: Verificar endpoint GET /
+      uri:
+        url: "http://basicservice.local/"
+        method: GET
+        status_code: 200
+        validate_certs: false
+      register: root_result
+      retries: 5
+      delay: 10
+      until: root_result.status == 200
+
+    - name: Verificar endpoint GET /public
+      uri:
+        url: "http://basicservice.local/public"
+        method: GET
+        status_code: 200
+        validate_certs: false
+      register: public_result
+      retries: 5
+      delay: 10
+      until: public_result.status == 200
+
+    - name: Verificar endpoint GET /private sin credenciales (debe retornar 401)
+      uri:
+        url: "http://basicservice.local/private"
+        method: GET
+        status_code: 401
+        validate_certs: false
+      register: private_unauth_result
+      retries: 5
+      delay: 10
+      until: private_unauth_result.status == 401
+
+    - name: Verificar endpoint GET /private con credenciales (debe retornar 200)
+      uri:
+        url: "http://basicservice.local/private"
+        method: GET
+        status_code: 200
+        url_username: "{{ htpasswd_user }}"
+        url_password: "{{ htpasswd_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: private_auth_result
+      retries: 5
+      delay: 10
+      until: private_auth_result.status == 200
+
+    - name: Resumen de verificación de endpoints
+      debug:
+        msg:
+          - "✅ GET /health_check  → HTTP {{ health_check_result.status }}"
+          - "✅ GET /              → HTTP {{ root_result.status }}"
+          - "✅ GET /public        → HTTP {{ public_result.status }}"
+          - "✅ GET /private (401) → HTTP {{ private_unauth_result.status }}"
+          - "✅ GET /private (200) → HTTP {{ private_auth_result.status }}"
+          - ""
+          - "🎉 Todos los endpoints están disponibles en http://basicservice.local"

@@ -1,0 +1,63 @@
+{{- if .Values.ingress.enabled }}
+# Ingress para rutas públicas — sin autenticación
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-public
+  labels:
+    app: basicservice
+    release: {{ .Release.Name }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /health_check
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Release.Name }}-basicservice
+                port:
+                  number: {{ .Values.service.port }}
+          - path: /public
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Release.Name }}-basicservice
+                port:
+                  number: {{ .Values.service.port }}
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Release.Name }}-basicservice
+                port:
+                  number: {{ .Values.service.port }}
+---
+# Ingress para /private — con autenticación HTTP Basic
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-private
+  labels:
+    app: basicservice
+    release: {{ .Release.Name }}
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName | quote }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /private
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Release.Name }}-basicservice
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

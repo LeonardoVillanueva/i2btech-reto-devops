@@ -1,0 +1,47 @@
+# =============================================================================
+# .gitignore — Reto DevOps i2btech
+# Excluye archivos sensibles, secretos y artefactos generados
+# =============================================================================
+
+# --- Helm values con secretos ---
+helm/**/auth-values.yaml
+
+# --- Certificados y claves TLS ---
+secrets/*.crt
+secrets/*.key
+secrets/*.pem
+secrets/.htpasswd
+
+# --- Archivos de entorno ---
+.env
+.env.*
+!.env.example
+
+# --- Terraform ---
+terraform.tfstate
+terraform.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+
+# --- Ansible Vault (secretos cifrados) ---
+ansible/vars/vault.yml
+
+# --- Node.js ---
+node_modules/
+i2btech-reto-devops/**/node_modules/
+
+# --- Logs ---
+*.log
+src/logs/
+
+# --- Archivos de sistema ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- IDE ---
+.vscode/
+.idea/

@@ -1,0 +1,14 @@
+services:
+  node:
+    image: node:lts-slim
+    volumes:
+      - ../..:/workspace
+    hostname: node
+    entrypoint: /bin/bash
+    user: root
+    command:
+      - -c
+      - |
+        apt update
+        apt install -y --no-install-recommends curl jq
+        sleep infinity

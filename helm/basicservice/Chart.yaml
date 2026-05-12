@@ -1,0 +1,6 @@
+apiVersion: v2
+name: basicservice
+description: Helm Chart para basicservice — aplicación Node.js/Express con autenticación en /private y persistencia de logs
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

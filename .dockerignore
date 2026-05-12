@@ -1,0 +1,30 @@
+# Dependencias instaladas localmente (se reinstalan en el build)
+node_modules/
+i2btech-reto-devops/i2btech-reto-devops/src/node_modules/
+
+# Logs generados en runtime
+src/logs/
+i2btech-reto-devops/i2btech-reto-devops/src/logs/
+
+# Archivos de test
+i2btech-reto-devops/i2btech-reto-devops/src/tests/
+**/*.test.js
+**/*.spec.js
+
+# Variables de entorno y secretos
+.env
+.env.*
+secrets/
+
+# Archivos de control de versiones y CI
+.git/
+.gitignore
+.kiro/
+
+# Documentación
+README.md
+*.md
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db

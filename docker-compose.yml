@@ -1,0 +1,47 @@
+# Docker Compose para basicservice — entorno local HTTPS
+# Levanta la app Node.js detrás de Nginx con TLS y auth_basic en /private
+
+services:
+  # Servicio de la aplicación Node.js/Express
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Volumen nombrado para persistir logs entre reinicios
+      - app-logs:/app/src/logs
+    networks:
+      - app-network
+    restart: unless-stopped
+    # La app no expone puertos al host; solo accesible internamente via nginx
+
+  # Servicio Nginx — reverse proxy con TLS
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      # Solo estos puertos expuestos al host
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Certificados TLS — generados localmente, NO en el repositorio
+      - ./secrets/nginx.crt:/etc/nginx/certs/nginx.crt:ro
+      - ./secrets/nginx.key:/etc/nginx/certs/nginx.key:ro
+      # Archivo htpasswd — generado localmente, NO en el repositorio
+      - ./secrets/.htpasswd:/etc/nginx/auth/.htpasswd:ro
+      # Configuración de Nginx
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - app-network
+    restart: unless-stopped
+
+# Volúmenes nombrados
+volumes:
+  app-logs:
+    driver: local
+
+# Redes internas
+networks:
+  app-network:
+    driver: bridge

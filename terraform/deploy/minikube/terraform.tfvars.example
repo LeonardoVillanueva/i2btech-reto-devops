@@ -1,0 +1,25 @@
+# terraform.tfvars.example
+#
+# NOTA: En el flujo normal, Ansible genera y pasa todas las variables
+# automáticamente via TF_VAR_* al ejecutar el playbook.
+# Este archivo es solo para quien quiera ejecutar Terraform manualmente
+# sin Ansible.
+#
+# Uso manual:
+#   cp terraform.tfvars.example terraform.tfvars
+#   # editar terraform.tfvars con valores reales
+#   terraform init && terraform apply
+#
+# Generar htpasswd_content con:
+#   htpasswd -nb admin tu_password
+
+htpasswd_content = "admin:CHANGE_ME_RUN_htpasswd_-nb_admin_yourpassword"
+
+# Opcionales — tienen defaults en variables.tf
+# kubeconfig_path  = "~/.kube/config"
+# namespace        = "default"
+# image_repository = "basicservice"
+# image_tag        = "latest"
+# replica_count    = 1
+# logs_host_path   = "/mnt/logs/basicservice"
+# ingress_host     = "basicservice.local"

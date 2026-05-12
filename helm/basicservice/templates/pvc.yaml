@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-logs-pvc
+  labels:
+    app: basicservice
+    release: {{ .Release.Name }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # storageClassName vacío para binding manual con el PV
+  storageClassName: ""
+  # Referencia explícita al PV creado por este chart
+  volumeName: {{ .Release.Name }}-logs-pv
+  resources:
+    requests:
+      storage: {{ .Values.persistence.storageSize }}

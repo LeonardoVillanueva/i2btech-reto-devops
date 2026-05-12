@@ -1,0 +1,12 @@
+# vault.yml.example — Estructura del vault de credenciales
+# 
+# INSTRUCCIONES:
+# 1. Copiar este archivo: cp vault.yml.example vault.yml
+# 2. Reemplazar los valores de placeholder con credenciales reales
+# 3. Cifrar el archivo: ansible-vault encrypt vault.yml
+# 4. Para ejecutar el playbook: ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+#
+# NUNCA commitear vault.yml sin cifrar al repositorio
+
+vault_htpasswd_user: "CHANGE_ME_USERNAME"
+vault_htpasswd_password: "CHANGE_ME_SECURE_PASSWORD"

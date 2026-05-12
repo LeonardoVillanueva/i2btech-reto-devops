@@ -1,6 +1,15 @@
 # deploy/minikube/main.tf
 # Entorno de despliegue: Minikube local
 # Crea el namespace y despliega basicservice via Helm
+#
+# Flujo:
+#   1. Crea namespace "basicservice" (en lugar de usar default)
+#   2. Genera certificado TLS autofirmado con el provider tls (sin openssl manual)
+#   3. Almacena el certificado como kubernetes_secret tipo kubernetes.io/tls
+#   4. Despliega el Helm chart en el namespace, referenciando el Secret TLS
+#
+# El modulo tiene create_namespace=false porque el namespace ya fue creado
+# por el recurso kubernetes_namespace de este archivo (evita conflicto).
 
 terraform {
   required_version = ">= 1.0"

@@ -1,234 +1,138 @@
 # Reto DevOps i2btech -- basicservice
 
-Despliegue completo de la aplicacion Node.js/Express `basicservice` en cuatro fases progresivas: contenedorizacion con Docker y Nginx, empaquetado con Helm Chart, despliegue declarativo con Terraform y orquestacion end-to-end con Ansible sobre Minikube.
-
-## Descripcion
-
-La aplicacion expone cuatro endpoints en el puerto 3000:
-
-| Endpoint | Descripcion | Autenticacion |
-|---|---|---|
-| `GET /` | Mensaje de bienvenida | No |
-| `GET /public` | Token publico | No |
-| `GET /private` | Token privado | HTTP Basic |
-| `GET /health_check` | Estado de salud | No |
+Solucion al reto tecnico DevOps: despliegue de una aplicacion Node.js/Express con Docker, Helm, Terraform y Ansible.
 
 ---
 
-## Prerrequisitos
+## Requisitos de la maquina para ejecutar el playbook
 
-Para ejecutar cada fase de forma independiente se necesitan las herramientas correspondientes. Para la **Fase 4 (Ansible)**, solo se necesita Ansible instalado -- el playbook instala todo lo demas automaticamente.
+El reto indica que el playbook se ejecuta en una maquina recien instalada con Ubuntu 24.04.
+La maquina debe cumplir:
 
-| Herramienta | Fase | Instalacion |
-|---|---|---|
-| Docker + Compose | Fase 1 | [docs.docker.com](https://docs.docker.com/engine/install/) |
-| Helm v3.15+ | Fase 2 | [helm.sh](https://helm.sh/docs/intro/install/) |
-| Terraform v1.8+ | Fase 3 | [developer.hashicorp.com](https://developer.hashicorp.com/terraform/install) |
-| Ansible v2.15+ | Fase 4 | `pip install ansible` |
-| openssl | Fase 1 | Incluido en la mayoria de sistemas |
+- **Sistema operativo**: Ubuntu 24.04 LTS (server o desktop)
+- **CPUs**: minimo 2 (Minikube requiere al menos 2 cores)
+- **RAM**: minimo 4 GB (recomendado 4782 MB o mas)
+- **Disco**: minimo 20 GB libres
+- **sudo sin password**: el usuario debe tener configurado NOPASSWD en sudoers
+- **Conectividad**: acceso a internet para descargar paquetes y binarios
 
----
-
-## Generacion de Secretos (solo para Fase 1 -- Docker Compose)
-
-Los archivos sensibles nunca se incluyen en el repositorio. Para la Fase 1 (Docker Compose), se generan automaticamente con el script incluido:
-
+Para configurar sudo sin password (prerrequisito del reto):
 ```bash
-chmod +x setup.sh
-./setup.sh            # usa password por defecto: admin123
-./setup.sh mi_pass    # o con password personalizado
+sudo visudo
+# Agregar al final:
+# tu_usuario ALL=(ALL) NOPASSWD: ALL
 ```
 
-El script genera:
-- `secrets/nginx.crt` y `secrets/nginx.key` -- certificado TLS autofirmado
-- `secrets/.htpasswd` -- credenciales HTTP Basic
+---
 
-> Para la Fase 4 (Ansible), el playbook genera todo automaticamente sin necesidad de secretos previos.
+## Ejecucion del playbook (punto 3 del reto)
+
+```bash
+# 1. Instalar Ansible (unico paso manual)
+sudo apt update && sudo apt install -y ansible git
+
+# 2. Clonar el repositorio
+git clone https://github.com/LeonardoVillanueva/i2btech-reto-devops.git
+cd i2btech-reto-devops
+
+# 3. Ejecutar el playbook
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+```
+
+Al finalizar, los 4 endpoints estan disponibles via HTTPS:
+
+```
+https://basicservice.local/              -> {"msg":"ApiRest prueba"}
+https://basicservice.local/public        -> {"public_token":"12837asd98a7sasd97a9sd7"}
+https://basicservice.local/private       -> 401 (sin credenciales) / 200 
+https://basicservice.local/health_check  -> Ok
+```
 
 ---
 
-## Fase 1: Docker Compose (entorno local HTTPS)
+## Correspondencia con los puntos del reto
 
-### Generar secretos y levantar el entorno
+### 1. Dockerizar la aplicacion
+
+| Requisito | Implementacion |
+|---|---|
+| 1a) Docker Compose + HTTPS con nginx | `docker-compose.yml` + `nginx/nginx.conf` + `Dockerfile` |
+| 1b) /private protegido con auth_basic | `nginx/nginx.conf` -> location /private con auth_basic |
+| 1c) Volumen para logs | `docker-compose.yml` -> volumen `app-logs` montado en `/app/src/logs` |
+
+### 2. Helm Chart
+
+| Requisito | Implementacion |
+|---|---|
+| 2a) Chart con exposicion segura | `helm/basicservice/` con Ingress TLS + auth basica en /private |
+
+### 3. Automatizar con Ansible
+
+| Requisito | Implementacion |
+|---|---|
+| 3a-i) Ubuntu 24.04 desde cero | Playbook instala Docker, kubectl, Minikube, Helm, Terraform |
+| 3a-ii) sudo sin password | `become: true` en el playbook (prerrequisito de la maquina) |
+| 3b) Minikube | FASE 7: `minikube start --driver=docker` |
+| 3c) Terraform + Helm chart | FASE 11: `terraform apply` que despliega el Helm chart |
+| 3d) /private con auth basica | Ingress annotation `nginx.ingress.kubernetes.io/auth-type: basic` |
+| 3e) Logs con hostPath | `pv.yaml` + `pvc.yaml` con hostPath `/mnt/logs/basicservice` |
+| 3f) 4 links via browser | FASE 12-13: configura /etc/hosts + verifica HTTPS |
+
+---
+
+## Decisiones de diseno
+
+- **Credenciales con valores por defecto en el playbook**: el reto pide que todo funcione
+  al ejecutar el playbook sin pasos manuales adicionales. Por eso las credenciales
+  (admin/admin123) estan definidas como variables con defaults. Se pueden sobreescribir
+  con `-e htpasswd_user=otro -e htpasswd_password=otro`.
+
+- **Namespace dedicado `basicservice`**: Terraform crea el namespace con el provider
+  `kubernetes` antes de desplegar el Helm chart. Esto demuestra gestion declarativa
+  de la infraestructura en lugar de usar el namespace `default`.
+
+- **Certificado TLS autofirmado via Terraform**: el provider `tls` genera el certificado
+  programaticamente. Se almacena como Secret de tipo `kubernetes.io/tls` y el Ingress
+  lo referencia para servir HTTPS. No se requiere generar certificados manualmente.
+
+- **Idempotencia**: el playbook puede ejecutarse multiples veces sin errores. Los tasks
+  que ya completaron su trabajo se marcan como `ok` o `skipping` (por ejemplo, Helm
+  no se reinstala si ya existe).
+
+- **Sin vault ni secretos en el repositorio**: no se usa Ansible Vault porque agregaria
+  un paso manual (`--ask-vault-pass`). Los secretos se generan en runtime (htpasswd via
+  `htpasswd -nb`, certificado TLS via Terraform).
+
+---
+
+## Validacion realizada
+
+El playbook fue validado en:
+- **VirtualBox** con Ubuntu 24.04 (Oracular Oriole) 64-bit
+- **2 CPUs**, **4782 MB RAM**, **25 GB disco**
+- **Red**: Adaptador puente (bridge)
+- **Usuario**: con NOPASSWD configurado en sudoers
+
+Resultado: los 34 tasks ejecutan correctamente, los 4 endpoints responden via HTTPS.
+
+---
+
+## Docker Compose (punto 1 del reto)
+
+Para probar Docker Compose de forma independiente:
 
 ```bash
-# Generar certificados TLS y archivo htpasswd automaticamente
 chmod +x setup.sh
 ./setup.sh
-
-# O con una password personalizada
-./setup.sh mi_password_segura
-
-# Construir la imagen y levantar los servicios
 docker compose up -d
-
-# Ver logs en tiempo real
-docker compose logs -f
-```
-
-### Verificar los cuatro endpoints
-
-```bash
-# Health check (debe responder "Ok")
 curl -k https://localhost/health_check
-
-# Ruta raiz (debe responder JSON con msg)
 curl -k https://localhost/
-
-# Ruta publica (debe responder JSON con public_token)
 curl -k https://localhost/public
-
-# Ruta privada con credenciales (debe responder JSON con private_token)
 curl -k -u admin:admin123 https://localhost/private
-
-# Ruta privada sin credenciales (debe responder 401)
-curl -k -I https://localhost/private
-
-# Verificar redireccion HTTP -> HTTPS (debe responder 301)
-curl -I http://localhost/
 ```
 
-### Detener el entorno
-
-```bash
-docker compose down
-# Para eliminar tambien el volumen de logs:
-docker compose down -v
-```
-
----
-
-## Fase 2: Helm Chart (Kubernetes)
-
-### Prerrequisitos
-
-```bash
-# Iniciar Minikube
-minikube start --driver=docker
-
-# Habilitar addon Ingress
-minikube addons enable ingress
-```
-
-### Validar el chart
-
-```bash
-# Lint del chart (debe pasar sin errores)
-helm lint helm/basicservice
-
-# Previsualizar los manifiestos generados
-helm template basicservice helm/basicservice \
-  --set auth.htpasswdContent="admin:$(openssl passwd -apr1 'password')"
-```
-
-### Instalar el chart
-
-```bash
-# Instalar con credenciales en namespace dedicado
-helm install basicservice helm/basicservice \
-  --namespace basicservice --create-namespace \
-  --set auth.htpasswdContent="admin:$(openssl passwd -apr1 'tu_password')"
-
-# Verificar el despliegue
-kubectl get pods,svc,ingress,pv,pvc -n basicservice
-```
-
-### Verificar endpoints en Minikube
-
-```bash
-# Obtener IP de Minikube
-MINIKUBE_IP=$(minikube ip)
-
-# Agregar entrada en /etc/hosts
-echo "$MINIKUBE_IP basicservice.local" | sudo tee -a /etc/hosts
-
-# Verificar endpoints via HTTPS
-curl -k https://basicservice.local/health_check
-curl -k https://basicservice.local/
-curl -k https://basicservice.local/public
-curl -k -u admin:tu_password https://basicservice.local/private
-curl -k -I https://basicservice.local/private  # -> 401
-```
-
----
-
-## Fase 3: Terraform
-
-### Configurar variables
-
-```bash
-# Copiar el archivo de ejemplo
-cp terraform/deploy/minikube/terraform.tfvars.example terraform/deploy/minikube/terraform.tfvars
-
-# Editar con valores reales (este archivo esta en .gitignore)
-nano terraform/deploy/minikube/terraform.tfvars
-```
-
-### Desplegar con Terraform
-
-```bash
-cd terraform/deploy/minikube
-
-# Inicializar providers y modulos
-terraform init
-
-# Revisar el plan de despliegue
-terraform plan
-
-# Aplicar el despliegue
-terraform apply
-
-# O con la variable directamente (sin terraform.tfvars)
-terraform apply \
-  -var="htpasswd_content=$(htpasswd -nb admin tu_password)"
-```
-
-Terraform crea automaticamente:
-- Namespace `basicservice`
-- Certificado TLS autofirmado para el Ingress
-- Secret TLS en el namespace
-- Helm release con la aplicacion
-
-### Destruir el despliegue
-
-```bash
-cd terraform/deploy/minikube
-terraform destroy
-```
-
----
-
-## Fase 4: Ansible (orquestacion completa)
-
-### Ejecutar el playbook
-
-```bash
-# Ejecutar el playbook completo (instala todo desde cero en Ubuntu 24.04)
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
-
-# Con credenciales personalizadas
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
-  -e htpasswd_user=admin -e htpasswd_password=mi_password
-
-# Con verbose para ver detalles
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -v
-```
-
-El playbook realiza automaticamente:
-1. Instala Docker, kubectl, Minikube, Helm y Terraform
-2. Inicia Minikube con driver Docker
-3. Habilita el addon Ingress
-4. Construye la imagen Docker dentro de Minikube
-5. Crea namespace `basicservice` via Terraform
-6. Genera certificado TLS y despliega con Terraform + Helm
-7. Configura `/etc/hosts` para `basicservice.local`
-8. Verifica los cuatro endpoints via HTTPS
-
-Luego de ejecutar el playbook, los 4 endpoints estan disponibles en:
-- https://basicservice.local/
-- https://basicservice.local/public
-- https://basicservice.local/private (requiere credenciales)
-- https://basicservice.local/health_check
+El script `setup.sh` genera los certificados TLS y el archivo `.htpasswd` necesarios
+para que Nginx sirva HTTPS y proteja /private con auth_basic.
 
 ---
 
@@ -236,94 +140,31 @@ Luego de ejecutar el playbook, los 4 endpoints estan disponibles en:
 
 ```
 .
-├── Dockerfile                    # Imagen Docker de la app
-├── .dockerignore                 # Exclusiones del build Docker
-├── docker-compose.yml            # Orquestacion local con Nginx HTTPS
-├── setup.sh                      # Script para generar secretos (Fase 1)
-├── .gitignore                    # Exclusiones del repositorio
-├── README.md                     # Este archivo
+├── Dockerfile                    # Imagen Docker (node:20-alpine, usuario no-root)
+├── docker-compose.yml            # Punto 1: app + nginx HTTPS
+├── setup.sh                      # Genera secretos para Docker Compose
 ├── nginx/
-│   └── nginx.conf                # Configuracion Nginx (TLS + auth_basic)
+│   └── nginx.conf                # Reverse proxy HTTPS + auth_basic en /private
 ├── secrets/
-│   └── .gitkeep                  # Directorio para secretos (no en repo)
-├── helm/
-│   └── basicservice/
-│       ├── Chart.yaml            # Metadatos del chart
-│       ├── values.yaml           # Valores parametrizables
-│       └── templates/
-│           ├── deployment.yaml   # Deployment con SecurityContext y probes
-│           ├── service.yaml      # Service ClusterIP
-│           ├── ingress.yaml      # Ingress con TLS y auth_basic en /private
-│           ├── pv.yaml           # PersistentVolume hostPath
-│           ├── pvc.yaml          # PersistentVolumeClaim
-│           └── secret.yaml       # Secret con htpasswd
+│   └── .gitkeep                  # Directorio para secretos (excluidos del repo)
+├── helm/basicservice/            # Punto 2: Helm Chart
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── deployment.yaml       # Deployment con probes y SecurityContext
+│       ├── service.yaml          # ClusterIP en puerto 3000
+│       ├── ingress.yaml          # Ingress con TLS y auth en /private
+│       ├── pv.yaml               # PersistentVolume hostPath
+│       ├── pvc.yaml              # PersistentVolumeClaim
+│       └── secret.yaml           # Secret con htpasswd
 ├── terraform/
-│   ├── modules/
-│   │   └── basicservice/         # Modulo reutilizable
-│   │       ├── main.tf           # helm_release
-│   │       ├── variables.tf      # Variables del modulo
-│   │       └── outputs.tf        # Outputs del modulo
-│   └── deploy/
-│       └── minikube/             # Entorno de despliegue Minikube
-│           ├── main.tf           # Namespace + TLS + Helm via modulo
-│           ├── variables.tf      # Variables del entorno
-│           ├── outputs.tf        # Outputs del entorno
-│           └── terraform.tfvars.example
-└── ansible/
-    ├── inventory.ini             # Inventario (localhost)
-    └── playbook.yml              # Playbook de orquestacion completa
-```
-
----
-
-## Seguridad
-
-### Archivos excluidos del repositorio
-
-Los siguientes archivos nunca deben estar en el repositorio:
-
-- `secrets/nginx.crt`, `secrets/nginx.key` -- certificados TLS
-- `secrets/.htpasswd` -- credenciales HTTP Basic
-- `terraform/**/*.tfvars` -- variables con secretos
-- `terraform/**/*.tfstate` -- estado de Terraform
-- `helm/**/auth-values.yaml` -- values con credenciales
-
----
-
-## Solucion de Problemas
-
-### Docker Compose no levanta
-
-```bash
-# Verificar que los secretos existen
-ls -la secrets/
-
-# Ver logs de los servicios
-docker compose logs nginx
-docker compose logs app
-```
-
-### Nginx retorna 502 Bad Gateway
-
-La app no esta disponible. Verificar:
-```bash
-docker compose ps
-docker compose logs app
-```
-
-### Pod en estado Pending en Kubernetes
-
-El PV hostPath no existe. Verificar:
-```bash
-kubectl describe pvc basicservice-logs-pvc -n basicservice
-# Crear el directorio en el nodo Minikube si es necesario:
-minikube ssh -- sudo mkdir -p /mnt/logs/basicservice
-```
-
-### Terraform falla con error de conexion
-
-Minikube no esta corriendo:
-```bash
-minikube status
-minikube start --driver=docker
+│   ├── modules/basicservice/     # Modulo: helm_release
+│   └── deploy/minikube/          # Entorno: namespace + TLS + modulo
+├── ansible/
+│   ├── inventory.ini             # localhost
+│   └── playbook.yml              # Punto 3: orquestacion completa
+└── i2btech-reto-devops/          # Codigo fuente original del reto
+    └── src/
+        ├── index.js
+        └── package.json
 ```

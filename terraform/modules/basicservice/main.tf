@@ -1,5 +1,9 @@
 # modules/basicservice/main.tf
 # Modulo reutilizable para desplegar basicservice via Helm
+#
+# create_namespace = false porque el namespace se crea en el root module
+# (deploy/minikube/main.tf) con kubernetes_namespace. Esto permite que
+# Terraform gestione el namespace como recurso independiente.
 
 resource "helm_release" "basicservice" {
   name             = var.release_name

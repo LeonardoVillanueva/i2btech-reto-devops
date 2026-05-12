@@ -9,9 +9,18 @@
 #   ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
 #     -e htpasswd_user=admin -e htpasswd_password=mi_password
 #
-# Prerrequisitos:
-#   - Ubuntu 24.04 con sudo sin contraseña
+# Prerrequisitos (segun el reto):
+#   - Ubuntu 24.04 recien instalada
+#   - Usuario con sudo sin password (NOPASSWD en sudoers)
+#   - Minimo 2 CPUs y 4 GB RAM (requerido por Minikube)
 #   - El repositorio clonado en la maquina
+#
+# Notas de diseno:
+#   - Las credenciales tienen valores por defecto para que el playbook funcione
+#     sin pasos manuales adicionales (requisito del reto: todo automatico).
+#   - No se usa Ansible Vault porque requeriria --ask-vault-pass (paso manual).
+#   - El playbook es idempotente: puede ejecutarse multiples veces sin errores.
+#   - Validado en VirtualBox con Ubuntu 24.04, 2 CPUs, 4782 MB RAM, 25 GB disco.
 
 - name: Reto DevOps i2btech - Despliegue completo de basicservice
   hosts: local

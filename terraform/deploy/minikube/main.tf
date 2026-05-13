@@ -63,6 +63,9 @@ resource "tls_self_signed_cert" "ingress" {
   subject {
     common_name  = var.ingress_host
     organization = "i2btech"
+    country      = "CL"
+    province     = "Santiago"
+    locality     = "Santiago"
   }
 
   validity_period_hours = 8760 # 1 year
